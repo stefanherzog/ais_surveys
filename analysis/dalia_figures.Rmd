@@ -1,0 +1,1840 @@
+---
+title: "Results for paper"
+site: workflowr::wflow_site
+output:
+  workflowr::wflow_html:
+    code_folding: hide
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+editor_options:
+  chunk_output_type: console
+---
+
+
+# Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = TRUE,
+  cache = FALSE,
+  autodep = TRUE
+)
+
+```
+
+
+Source `dependencies.R`.
+
+```{r dependencies, message=FALSE, code=readr::read_lines(here::here("code/_dependencies.R"))}
+source(here::here("code/_dependencies.R"))
+
+```
+
+
+Load data.
+
+```{r load_data}
+source(here("code/load_data.R"))
+
+```
+
+
+
+```{r theming, cache = FALSE}
+theme_set(theme_minimal_grid())
+theme_update(
+  panel.spacing = unit(15, "pt"),
+  legend.position = "bottom",
+  legend.justification = 0.5,
+  legend.text = element_text(size = 11),
+  legend.title = element_text(size = 12),
+  strip.text = element_text(size = 12),
+  plot.title = element_text(size = 11),
+  plot.title.position = "plot",
+  axis.text.y = element_text(size = 8.5)
+)
+
+```
+
+
+
+
+
+
+
+# Main text
+
+
+## `tbl:demographics`
+
+```{r dat_tbl_demographics}
+fnc_freqs <- function(dat, group_col) {
+  dat %>%
+    group_by(country_code, !!!syms(group_col)) %>%
+    summarize(
+      n = n(),
+      n_w = sum(weight),
+      n_w_rounded = as.integer(round(n_w, 0))
+    ) %>%
+    group_by(country_code) %>%
+    mutate(prop = n / sum(n),
+           prop_w = n_w / sum(n_w)) %>%
+    mutate(perc = fnc_perc(prop),
+           perc_w = fnc_perc(prop_w)) %>%
+    group_by(country_code, !!!syms(group_col))
+}
+
+dat_gender <- fnc_freqs(dat, "gender")
+dat_education <- fnc_freqs(dat, "education")
+dat_city_rural <- fnc_freqs(dat, "city_rural_split")
+dat_political <- fnc_freqs(dat, "political_str")
+
+
+# age
+dat_age <- dat %>%
+  group_by(country_code) %>%
+  summarize(
+    age_min = min(age),
+    # there is no weighted minimum
+    age_q25 = quantile(age, .25),
+    age_q25_w = weighted.quantile(age, weight, .25),
+    age_mdn = median(age),
+    age_mdn_w = weighted.median(age, weight),
+    age_q75 = quantile(age, 0.75),
+    age_q75_w = weighted.quantile(age, weight, 0.75),
+    age_max = max(age) # there is no weighted maximum
+  )
+
+```
+
+```{r tbl_demographics}
+tbl_age <- dat_age %>%
+  group_by(country_code) %>%
+  transmute(
+    sample = glue("{age_mdn} ({age_q25} -- {age_q75})"),
+    weighted = glue("{age_mdn_w} ({age_q25_w} -- {age_q75_w})")
+  ) %>%
+  pivot_wider(names_from = "country_code",
+              values_from = c("sample", "weighted")) %>%
+  mutate(Country = "age") %>%
+  select(
+    Country,
+    GER = sample_GER,
+    `GER (weighted)` = weighted_GER,
+    GB = sample_GB,
+    `GB (weighted)` = weighted_GB,
+    US = sample_US,
+    `US (weighted)` = weighted_US
+  )
+
+fnc_freqs_str <- function(x) {
+  x %>%
+    transmute(
+      sample = glue("{n} ({perc})"),
+      weighted = glue("{n_w_rounded} ({perc_w})")
+    ) %>%
+    pivot_wider(names_from = "country_code",
+                values_from = c("sample", "weighted")) %>%
+    select(
+      GER = sample_GER,
+      `GER (weighted)` = weighted_GER,
+      GB = sample_GB,
+      `GB (weighted)` = weighted_GB,
+      US = sample_US,
+      `US (weighted)` = weighted_US
+    ) %>%
+    rename(Country = 1) %>%
+    ungroup
+}
+
+tbl <- bind_rows(
+  tbl_age,
+  fnc_freqs_str(dat_gender),
+  fnc_freqs_str(dat_education),
+  fnc_freqs_str(dat_city_rural),
+  fnc_freqs_str(dat_political)
+)
+
+kable(tbl, format = "markdown")
+
+tbl_latex <- tbl %>%
+  kable(
+    format = "latex",
+    booktabs = TRUE,
+    caption = "Demographic information \\label{tbl:demographics}",
+    table.envir = "table*",
+    align = c("l", "r", "r", "r", "r", "r", "r")
+  ) %>%
+  pack_rows("Age: median (IQR)", 1, 1) %>%
+  pack_rows("Gender: n (%)", 2, 3) %>%
+  pack_rows("Education: n (%)", 4, 7) %>%
+  pack_rows("Urban/rural: n (%)", 8, 9) %>%
+  pack_rows("Political leaning: n (%)", 10, 16)
+
+write_lines(tbl_latex, here("output/tbl_demographics.tex"))
+
+```
+
+
+
+
+## `fig:attitudes`
+
+```{r dat_attitudes}
+fnc_dat_attitudes <- function(topic_str) {
+  # get relevant data
+  dat_fig_attitudes <- items %>%
+    filter(str_detect(topic, topic_str)) %>%
+    pull(item) %>%
+    select(
+      dat,
+      id,
+      country_code,
+      weight,
+      age,
+      gender,
+      ends_with("_split"),
+      political,
+      political_num,
+      political_str,
+      .
+    ) %>%
+    pivot_longer(
+      cols = c(
+        -id,
+        -country_code,
+        -weight,
+        -age,
+        -gender,
+        -ends_with("_split"),
+        -political,
+        -political_num,
+        -political_str
+      ),
+      names_to = "item",
+      values_to = "rating"
+    ) %>%
+    left_join(items, by = "item") %>%
+    left_join(tbl_acceptability_str, by = "topic") %>%
+    mutate(
+      topic = as.character(topic),
+      rating = ordered(
+        x = str_to_lower(rating),
+        level = rating_infos$acceptability$rating_chr
+      )
+    )
+  
+  
+  # item order is defined by pooling across countries
+  item_order <- dat_fig_attitudes %>%
+    group_by(concept) %>%
+    summarize(order_by = weighted.mean((as.numeric(rating) - 1) / 3, weight)) %>%
+    arrange(order_by) %>%
+    # not descending because it will be plotted in reverse
+    pull(concept)
+  
+  dat_fig_attitudes <- dat_fig_attitudes %>%
+    mutate(item_ord = factor(x = concept, level = item_order))
+  
+  
+  # aggregate data
+  dat_fig_attitudes_aggr <- dat_fig_attitudes %>%
+    group_by(country_code, topic, item, item_ord, rating) %>%
+    summarize(n = sum(weight)) %>%
+    group_by(country_code, topic, item) %>%
+    mutate(prop = n / sum(n), perc = fnc_perc(prop)) %>%
+    left_join(
+      select(rating_infos$acceptability, rating_chr, color_hex),
+      by = c("rating" = "rating_chr")
+    ) %>%
+    mutate(side = ifelse(str_detect(rating, "not"), "left", "right"))
+  
+  # find numbers for right side
+  dat_fig_attitudes_aggr_right <- dat_fig_attitudes_aggr %>%
+    filter(side == "right") %>%
+    mutate(rating = ordered(
+      x = str_to_lower(rating),
+      level = rating_infos$acceptability$rating_chr[4:3]
+    )) %>%
+    arrange(country_code, topic, item, item_ord, desc(rating)) %>%
+    mutate(cumperc = cumsum(perc),
+           text_y = (cumperc + lag(cumperc, default = 0)) / 2)
+  
+  # find numbers for left side
+  dat_fig_attitudes_aggr_left <- dat_fig_attitudes_aggr %>%
+    filter(side == "left") %>%
+    arrange(country_code, topic, item, desc(rating)) %>%
+    mutate(cumperc = cumsum(perc),
+           text_y = -(cumperc + lag(cumperc, default = 0)) / 2)
+  
+  # find side totals
+  dat_fig_attitudes_aggr_sides <-
+    bind_rows(dat_fig_attitudes_aggr_right,
+              dat_fig_attitudes_aggr_left) %>%
+    group_by(country_code, topic, item, item_ord, side) %>%
+    summarize(perc = sum(perc)) %>%
+    mutate(sum_x = ifelse(side == "left", -(perc + 12.5), perc + 12.5))
+  
+  out <- list(
+    dat = dat_fig_attitudes,
+    aggr = dat_fig_attitudes_aggr,
+    left = dat_fig_attitudes_aggr_left,
+    right = dat_fig_attitudes_aggr_right,
+    sides = dat_fig_attitudes_aggr_sides
+  )
+  return(out)
+}
+
+```
+
+
+```{r fig_attitudes, fig.width=7, fig.height=7.5}
+fnc_fig_attitudes <- function(topic_str, fig_attitudes_str) {
+  fontsize <- 1.75
+  
+  dat_fig_attitudes <-
+    fnc_dat_attitudes(topic_str)
+  
+  fig_attitudes_services <- ggplot() +
+    scale_x_discrete(
+      "",
+      label = function(x) {
+        x <- str_replace(x, "\n", " ")
+        str_wrap(x, width = 35)
+      }
+    ) +
+    scale_y_continuous("",
+                       guide = NULL,
+                       limits = c(-100, +110)) +
+    geom_bar(
+      data = dat_fig_attitudes$right,
+      aes(
+        x = fct_rev(item_ord),
+        y = perc,
+        fill = rating
+      ),
+      width = .8,
+      position = "stack",
+      stat = "identity"
+    ) +
+    geom_text(
+      data = dat_fig_attitudes$right,
+      aes(x = item_ord, y = text_y, label = perc),
+      size = fontsize,
+      color = "white",
+      fontface = "bold"
+    ) +
+    geom_bar(
+      data = dat_fig_attitudes$left,
+      aes(
+        x = fct_rev(item_ord),
+        y = -perc,
+        fill = rating
+      ),
+      width = .8,
+      position = "stack",
+      stat = "identity"
+    ) +
+    geom_text(
+      data = dat_fig_attitudes$left,
+      aes(x = item_ord, y = text_y, label = perc),
+      size = fontsize,
+      color = "white",
+      fontface = "bold"
+    ) +
+    geom_text(
+      data = dat_fig_attitudes$sides,
+      aes(x = item_ord, y = sum_x, label = perc),
+      size = 1.25 * fontsize,
+      fontface = "bold"
+    ) +
+    geom_hline(yintercept = 0) +
+    coord_flip() +
+    scale_fill_manual(name = fig_attitudes_str,
+                      values = rating_infos$acceptability_colors) +
+    ggtitle(fig_attitudes_str) +
+    facet_grid(. ~ country_code) +
+    guides(fill = guide_legend(
+      reverse = FALSE,
+      title.position = "top",
+      title.hjust = .5
+    )) +
+    theme(panel.grid.major = element_blank())
+}
+
+fig_attitudes_services <- fnc_fig_attitudes("acceptability_service",
+                                            "Acceptability of personalizing a service")
+
+fig_attitudes_information <- fnc_fig_attitudes(
+  "acceptability_information",
+  "Acceptability of using information for personalization"
+)
+
+fig_attitudes_data <- fnc_fig_attitudes("acceptability_data",
+                                        "Acceptability of collecting and using data")
+
+fig_attitudes <- plot_grid(
+  fig_attitudes_services + guides(fill = "none"),
+  fig_attitudes_information + guides(fill = "none"),
+  fig_attitudes_data + guides(fill = "none"),
+  ncol = 1,
+  align = "hv",
+  
+  rel_heights = c(1.125, 1.125, 1)
+)
+
+fig_attitudes_legend <- get_legend(
+  fig_attitudes_services +
+    theme(
+      legend.box.margin = margin(10, 10, 10, 10),
+      legend.title = element_blank(),
+      legend.text = element_text(size = 7)
+    )
+)
+
+fig_attitudes <- plot_grid(
+  fig_attitudes,
+  fig_attitudes_legend,
+  ncol = 1,
+  rel_heights = c(20, 1)
+)
+fig_attitudes
+
+save_plot(
+  here("output/fig_attitudes.pdf"),
+  fig_attitudes,
+  base_width = 18 / 2.54,
+  # 18/2.54 max
+  base_height = 7.5,
+  # 22/2.54 max
+)
+
+```
+
+
+## `fig:gap`
+
+```{r dat_fig_gap}
+dat_gap <- fnc_dat_attitudes("acceptability_")$dat %>%
+  group_by(country_code, topic, id, weight) %>%
+  summarize(m = mean((as.numeric(rating) - 1) / 3, na.rm = TRUE)) %>%  # scale within [0,1]
+  left_join(tbl_acceptability_str, by = "topic") %>%
+  ungroup
+
+dat_gap_wide <- dat_gap %>%
+  select(-color_hex, -topic) %>%
+  pivot_wider(names_from = "topic_str",
+              values_from = c("m")) %>%
+  mutate(
+    delta_information = Services - Information,
+    delta_data = Services - Data,
+    type = case_when(
+      delta_data > 0 &
+        delta_information > 0 ~ "both",
+      delta_data <= 0 &
+        delta_information > 0 ~ "only information",
+      delta_data > 0 &
+        delta_information <= 0 ~ "only data",
+      TRUE ~ "neither"
+    )
+  )
+
+dat_gap_wide_type <- dat_gap_wide %>%
+  group_by(country_code, type) %>%
+  summarize(n = sum(weight)) %>%
+  group_by(country_code) %>%
+  mutate(prop = n / sum(n),
+         perc = glue("{fnc_perc(prop)}%")) %>%
+  left_join(tbl_gap_types, by = "type")
+
+```
+
+```{r fig_gap_population}
+fig_gap_population <- dat_gap %>%
+  ggplot(aes(
+    x = m,
+    color = fct_rev(topic_str),
+    fill = fct_rev(topic_str),
+    weight = weight
+  )) +
+  coord_cartesian(xlim = c(0, 1)) +
+  scale_x_continuous("Acceptance level") +
+  scale_y_continuous("Density") +
+  scale_color_manual(values = tbl_acceptability_str$color_hex) +
+  scale_fill_manual(values = tbl_acceptability_str$color_hex) +
+  # `geom_density` understands the `weight` argument
+  geom_density(alpha = .1,
+               adjust = 1,
+               size = .75) +
+  guides(color = guide_legend(title = NULL),
+         fill = guide_legend(title = NULL)) +
+  facet_grid(. ~ country_code) +
+  theme(axis.text = element_text(size = 10),
+        legend.position = "top")
+
+dat_gap_mdn <- dat_gap %>%
+  group_by(country_code, topic_str) %>%
+  summarize(mdn = weighted.median(m, weight))
+
+dat_gap_mdn_wide <- dat_gap_mdn %>%
+  pivot_wider(names_from = "topic_str", values_from = "mdn") %>%
+  mutate(gap_data = Services - Data,
+         gap_information = Services - Information)
+
+fig_gap_population <- fig_gap_population +
+  geom_vline(data = dat_gap_mdn,
+             aes(xintercept = mdn, color = topic_str),
+             linetype = "dashed") +
+  geom_segment(
+    data = dat_gap_mdn_wide,
+    aes(x = Information, xend = Services),
+    y = 2,
+    yend = 2,
+    arrow = arrow(length = unit(1, "mm"), ends = "both"),
+    color = filter(tbl_acceptability_str, topic_str == "Information")$color_hex,
+    inherit.aes = FALSE
+  ) +
+  geom_text(
+    data = dat_gap_mdn_wide,
+    aes(x = Information - .175,
+        label = round(gap_information, 2)),
+    y = 2,
+    size = 3.25,
+    fontface = "bold",
+    inherit.aes = FALSE,
+    color = filter(tbl_acceptability_str,
+                   topic_str == "Information")$color_hex
+  ) +
+  geom_segment(
+    data = dat_gap_mdn_wide,
+    aes(x = Data, xend = Services),
+    y = 1.75,
+    yend = 1.75,
+    arrow = arrow(length = unit(1, "mm"), ends = "both"),
+    color = filter(tbl_acceptability_str,
+                   topic_str == "Data")$color_hex,
+    inherit.aes = FALSE
+  ) +
+  geom_text(
+    data = dat_gap_mdn_wide,
+    aes(x = Data - .175, label = round(gap_data, 2)),
+    y = 1.75,
+    size = 3.25,
+    fontface = "bold",
+    inherit.aes = FALSE,
+    color = filter(tbl_acceptability_str,
+                   topic_str == "Data")$color_hex
+  )
+
+```
+
+```{r fig_gap_individual}
+fig_gap_individual <- dat_gap_wide %>%
+  ggplot(aes(delta_information, delta_data, color = type)) +
+  coord_fixed(ratio = 1,
+              xlim = c(-1, +1),
+              ylim = c(-1, +1)) +
+  scale_x_continuous("Services vs. Information") +
+  scale_y_continuous("Services vs. Data") +
+  scale_color_manual(values = gap_types_color_hex) +
+  geom_hline(yintercept = 0,
+             alpha = .5) +
+  geom_vline(xintercept = 0,
+             alpha = .5) +
+  geom_point(alpha = .5, size = 1) +
+  theme(axis.text = element_text(size = 10)) +
+  facet_grid(. ~ country_code)
+
+
+fig_gap_individual <- fig_gap_individual +
+  geom_text(
+    data = dat_gap_wide_type,
+    aes(
+      x = type_x,
+      y = type_y,
+      label = perc,
+      color = NULL
+    ),
+    fontface = "bold",
+    size = 5
+  ) +
+  geom_text(
+    data = dat_gap_wide_type,
+    aes(
+      x = 1.05 * type_x,
+      y = 1.3 * type_y,
+      label = type_str,
+      color = NULL
+    ),
+    size = 3,
+    fontface = "bold"
+  ) +
+  guides(color = "none")
+
+```
+
+```{r fig_gap, fig.width=7, fig.height=6.5}
+fig_gap <- plot_grid(
+  fig_gap_population,
+  fig_gap_individual,
+  axis = "b",
+  align = "hv",
+  labels = c("A", "B"),
+  hjust = -2,
+  vjust = +1.5,
+  label_size = 18,
+  rel_heights = c(1, 1.25),
+  nrow = 2
+)
+fig_gap
+
+save_plot(
+  here("output/fig_gap.pdf"),
+  fig_gap,
+  base_width = 18 / 2.54,
+  # 18/2.54 max
+  base_height = 6.5,
+  # 22/2.54 max
+)
+
+```
+
+
+
+
+## `fig:privacy`
+
+```{r dat_concern}
+# get relevant data
+dat_concern <- dat %>%
+  select(
+    id,
+    country_code,
+    weight,
+    concern_privacy,
+    age,
+    gender,
+    education_split,
+    city_rural_split,
+    political,
+    political_split,
+    political_num,
+    political_str
+  ) %>%
+  mutate(concern_privacy = ordered(
+    x = str_to_lower(concern_privacy),
+    level = rating_infos$concern$rating_chr
+  ))
+
+
+# aggregate data
+dat_concern_aggr <- dat_concern %>%
+  group_by(country_code, concern_privacy) %>%
+  summarize(n = sum(weight)) %>%
+  group_by(country_code) %>%
+  mutate(prop = n / sum(n), perc = fnc_perc(prop)) %>%
+  left_join(
+    select(rating_infos$concern, rating_chr, color_hex),
+    by = c("concern_privacy" = "rating_chr")
+  ) %>%
+  mutate(side = ifelse(str_detect(concern_privacy, "not"), "left", "right"))
+
+# find numbers for right side
+dat_concern_aggr_right <- dat_concern_aggr %>%
+  filter(side == "right") %>%
+  mutate(concern_privacy = ordered(
+    x = str_to_lower(concern_privacy),
+    level = rating_infos$concern$rating_chr[4:3]
+  )) %>%
+  arrange(country_code, desc(concern_privacy)) %>%
+  mutate(cumperc = cumsum(perc),
+         text_y = (cumperc + lag(cumperc, default = 0)) / 2)
+
+# find numbers for left side
+dat_concern_aggr_left <- dat_concern_aggr %>%
+  filter(side == "left") %>%
+  arrange(country_code, desc(concern_privacy)) %>%
+  mutate(cumperc = cumsum(perc),
+         text_y = -(cumperc + lag(cumperc, default = 0)) / 2)
+
+# find side totals
+dat_concern_aggr_sides <-
+  bind_rows(dat_concern_aggr_left,
+            dat_concern_aggr_right) %>%
+  group_by(country_code, side) %>%
+  summarize(perc = sum(perc)) %>%
+  mutate(sum_x = ifelse(side == "left", -(perc + 12.5), perc + 12.5))
+
+dat_concern_dfs <- list(
+  dat = dat_concern,
+  aggr = dat_concern_aggr,
+  left = dat_concern_aggr_left,
+  right = dat_concern_aggr_right,
+  sides = dat_concern_aggr_sides
+)
+
+```
+
+
+```{r fig_concern}
+fontsize <- 1.75
+
+fig_concern <- ggplot() +
+  scale_x_discrete("") +
+  scale_y_continuous("",
+                     guide = NULL,
+                     limits = c(NA, +110)) +
+  geom_bar(
+    data = dat_concern_dfs$right,
+    aes(x = country_code,
+        y = perc,
+        fill = concern_privacy),
+    width = .8,
+    position = "stack",
+    stat = "identity"
+  ) +
+  geom_text(
+    data = dat_concern_dfs$right,
+    aes(x = country_code, y = text_y, label = perc),
+    size = fontsize,
+    color = "white",
+    fontface = "bold"
+  ) +
+  geom_bar(
+    data = dat_concern_dfs$left,
+    aes(x = country_code,
+        y = -perc,
+        fill = concern_privacy),
+    width = .8,
+    position = "stack",
+    stat = "identity"
+  ) +
+  geom_text(
+    data = dat_concern_dfs$left,
+    aes(x = country_code, y = text_y, label = perc),
+    size = fontsize,
+    color = "white",
+    fontface = "bold"
+  ) +
+  geom_text(
+    data = dat_concern_dfs$sides,
+    aes(x = country_code, y = sum_x, label = perc),
+    size = 1.25 * fontsize,
+    fontface = "bold"
+  ) +
+  geom_hline(yintercept = 0) +
+  coord_flip() +
+  scale_fill_manual(name = "",
+                    values = rating_infos$concern_colors) +
+  guides(fill = guide_legend(reverse = FALSE,
+                             ncol = 1)) +
+  theme(panel.grid.major = element_blank())
+
+fig_concern_legend <- get_legend(fig_concern +
+                                   theme(legend.text = element_text(size = 10),
+                                         legend.title = element_blank()))
+
+
+fig_concern <-
+  plot_grid(
+    fig_concern +
+      guides(fill = "none") +
+      theme(plot.margin = margin(15, 0, 0, 75)),
+    fig_concern_legend,
+    labels = c("Privacy concerns"),
+    hjust = -.25,
+    ncol = 2,
+    scale = c(1, .8),
+    rel_heights = c(10, 1)
+  )
+
+```
+
+
+
+
+```{r dat_fig_privacy}
+fnc_get_privacy_data <- function(topic_str) {
+  # get relevant data
+  dat_fig_privacy <- items %>%
+    filter(str_detect(topic, topic_str)) %>%
+    pull(item) %>%
+    select(dat,
+           id,
+           country_code,
+           weight,
+           ends_with("_split"),
+           concern_privacy,
+           .) %>%
+    pivot_longer(
+      cols = c(
+        -id,
+        -country_code,
+        -weight,
+        -ends_with("_split"),
+        -concern_privacy
+      ),
+      names_to = "item",
+      values_to = "rating"
+    ) %>%
+    left_join(items, by = "item") %>%
+    mutate(
+      topic = as.character(topic),
+      concern_privacy = ordered(
+        x = str_to_lower(concern_privacy),
+        level = rating_infos$concern$rating_chr
+      )
+    )
+  
+  # item order is defined by pooling across countries
+  item_order <- dat_fig_privacy %>%
+    filter(concept != "None of the above") %>%
+    group_by(concept) %>%
+    summarize(
+      order_by = weighted.mean(as.numeric(rating == TRUE), 
+                               weight, na.rm = TRUE)) %>%
+    arrange(order_by) %>%
+    # not descending because it will be plotted in reverse
+    pull(concept) %>%
+    c("None of the above", .)
+  
+  dat_fig_privacy <- dat_fig_privacy %>%
+    mutate(item_ord = factor(x = concept, level = item_order))
+  
+  
+  # aggregate data
+  dat_fig_privacy_aggr <- dat_fig_privacy %>%
+    group_by(country_code, topic, item, item_ord, rating) %>%
+    summarize(n = sum(weight)) %>%
+    filter(!is.na(rating)) %>%
+    group_by(country_code, topic, item, item_ord) %>%
+    mutate(prop = n / sum(n),
+           perc = fnc_perc(prop)) %>%
+    filter(rating == TRUE) %>%
+    select(-rating)
+  
+  dat_fig_privacy_concern_aggr <- dat_fig_privacy %>%
+    mutate(
+      concerned = ifelse(
+        str_detect(concern_privacy, "not"),
+        "not or not very concerned",
+        as.character(concern_privacy)
+      ),
+      concerned = ordered(
+        concerned,
+        levels = c(
+          "not or not very concerned",
+          "somewhat concerned",
+          "very concerned"
+        )
+      )
+    ) %>%
+    group_by(country_code, topic, item, item_ord, concerned, rating) %>%
+    filter(!is.na(rating)) %>%
+    summarize(n = sum(weight)) %>%
+    group_by(country_code, topic, item, item_ord, concerned) %>%
+    mutate(prop = n / sum(n),
+           perc = fnc_perc(prop)) %>%
+    filter(rating == TRUE) %>%
+    select(-rating) %>%
+    ungroup
+  
+  dat_fig_privacy <- list(global = dat_fig_privacy_aggr,
+                          per_concern = dat_fig_privacy_concern_aggr)
+  
+  return(dat_fig_privacy)
+}
+
+```
+
+
+```{r fig_privacy_tools}
+dat_fig_privacy_tools <-
+  fnc_get_privacy_data("privacy_tools")$per_concern %>%
+  arrange(country_code, item_ord)
+
+fig_privacy_tools_base <- dat_fig_privacy_tools %>%
+  ggplot(aes(
+    x = perc,
+    y = item_ord,
+    color = concerned,
+    group = concerned
+  )) +
+  coord_fixed(ratio = 25) +
+  scale_x_continuous("% respondents indicating they currently use tool",
+                     limits = c(0, 100)) +
+  scale_y_discrete("") +
+  geom_vline(xintercept = 50, linetype = "dotted") +
+  geom_path(alpha = .25) +
+  geom_point(aes(size = n), shape = 21) +
+  geom_point(aes(size = n), alpha = 0.75) +
+  scale_color_manual("", values = c("black", rating_infos$concern_colors[3:4])) +
+  scale_size_area("N", max_size = 2.5, limits = c(20, 300)) +
+  # the size of N should match across panels by using the `limits` argument
+  guides(
+    size = guide_legend(
+      "    N",
+      nrow = 1,
+      title.position = "left",
+      title.hjust = 0,
+      order = 2
+    ),
+    color = guide_legend("",
+                         order = 1,
+                         nrow = 1)
+  ) +
+  theme(
+    plot.title.position = "plot",
+    panel.grid.major.y = element_blank(),
+    axis.text.x = element_text(size = 10),
+    axis.title.x = element_text(size = 10),
+    legend.text = element_text(size = 7),
+    legend.title = element_text(size = 10),
+    legend.box = "horizontal"
+  ) +
+  facet_grid(. ~ country_code)
+
+fig_privacy_tools <- fig_privacy_tools_base +
+  geom_text(
+    x = 87.5,
+    aes(y = item_ord, label = perc),
+    data = fnc_get_privacy_data("privacy_tools")$global,
+    inherit.aes = FALSE,
+    size = 3,
+    fontface = "bold"
+  )
+
+```
+
+
+```{r fig_privacy_settings}
+dat_fig_privacy_settings <-
+  fnc_get_privacy_data("adjustment_online_data")$per_concern %>%
+  arrange(country_code, item_ord)
+
+fig_privacy_settings <- fig_privacy_tools_base %+%
+  dat_fig_privacy_settings +
+  scale_x_continuous("% respondents indicating they used it in the last year",
+                     limits = c(0, 100)) +
+  geom_text(
+    x = 87.5,
+    aes(y = item_ord, label = perc),
+    data = fnc_get_privacy_data("adjustment_online_data")$global,
+    inherit.aes = FALSE,
+    size = 3,
+    fontface = "bold"
+  )
+
+```
+
+
+```{r fig_privacy, fig.width=7, fig.height=6.5}
+fig_privacy_tools_settings <- plot_grid(
+  fig_privacy_tools +
+    theme(legend.position = "none"),
+  fig_privacy_settings +
+    theme(legend.position = "none"),
+  ncol = 1,
+  labels = c(" Privacy tools", "Privacy settings"),
+  hjust = -.25,
+  axis = "b",
+  align = "hv"
+)
+
+fig_privacy_tools_settings_legend <- get_legend(fig_privacy_tools +
+                                                  theme(legend.text = element_text(size = 7)))
+
+
+fig_privacy <- plot_grid(
+  fig_concern,
+  fig_privacy_tools_settings,
+  fig_privacy_tools_settings_legend,
+  rel_heights = c(1.25, 4, .5),
+  ncol = 1
+)
+fig_privacy
+
+# https://www.pnas.org/page/authors/format
+save_plot(
+  here("output/fig_privacy.pdf"),
+  fig_privacy,
+  base_width = 18 / 2.54,
+  # 18/2.54 max
+  base_height = 7
+  # 22/2.54 max
+)
+
+```
+
+
+
+## `fig:political`
+
+```{r dat_fig_political_attitudes}
+dat_fig_political_attitudes <-
+  fnc_dat_attitudes("^acceptability")$dat %>%
+  group_by(
+    country_code,
+    id,
+    weight,
+    political_split,
+    political,
+    political_num,
+    political_str,
+    topic_str
+  ) %>%
+  summarize(m = mean(x = (as.numeric(rating) - 1) / (4 - 1)))
+# no weighting here since this is averaging within respondents
+
+
+dat_fig_political_attitudes_n <- dat_fig_political_attitudes %>%
+  group_by(country_code,
+           political_split,
+           political,
+           political_num,
+           political_str,
+           topic_str) %>%
+  summarize(n = sum(weight)) %>%
+  mutate(n_str = round(n, 0))
+
+```
+
+
+```{r fig_political_attitudes}
+fig_political_attitudes <- dat_fig_political_attitudes %>%
+  ggplot(aes(
+    x = political_str,
+    y = m,
+    weight = weight,
+    fill = political_split
+  )) +
+  scale_x_discrete("") +
+  scale_y_continuous("Average acceptability", limits = c(-.175, +1)) +
+  scale_fill_manual(values = c("red", "white", "darkgrey")) +
+  geom_hline(yintercept = 0.5,
+             linetype = "dashed") +
+  # `geom_boxplot` understands the weight mapping
+  geom_boxplot(
+    varwidth = TRUE,
+    notch = FALSE,
+    outlier.alpha = 0.5,
+    outlier.size = 1,
+    alpha = .5
+  ) +
+  geom_text(
+    y = -0.125,
+    size = 1.75,
+    angle = 90,
+    color = "darkgrey",
+    aes(label = n_str, y = NULL, weight = NULL),
+    data = dat_fig_political_attitudes_n
+  ) +
+  facet_grid(country_code ~ fct_rev(topic_str)) +
+  theme(
+    axis.text.x = element_text(
+      angle = 60,
+      hjust = 1,
+      size = 6
+    ),
+    panel.grid.major.x = element_blank()
+  ) +
+  guides(fill = "none")
+
+```
+
+
+
+```{r dat_concern_political}
+dat_political_n <- dat_concern %>%
+  group_by(country_code,
+           political_split,
+           political,
+           political_num,
+           political_str) %>%
+  summarize(n_political = sum(weight)) %>%
+  ungroup %>%
+  select(country_code, political_str, n_political)
+
+dat_concern_political_aggr <- dat_concern %>%
+  group_by(
+    country_code,
+    political_split,
+    political,
+    political_num,
+    political_str,
+    concern_privacy
+  ) %>%
+  summarize(n = sum(weight)) %>%
+  group_by(country_code, political_str) %>%
+  mutate(prop = n / sum(n),
+         perc = fnc_perc(prop)) %>%
+  left_join(dat_political_n, by = c("country_code", "political_str")) %>%
+  left_join(
+    select(rating_infos$concern, rating_chr, color_hex),
+    by = c("concern_privacy" = "rating_chr")
+  ) %>%
+  mutate(side = ifelse(str_detect(concern_privacy, "not"), "left", "right"))
+
+# find numbers for right side
+dat_concern_political_aggr_right <- dat_concern_political_aggr %>%
+  filter(side == "right") %>%
+  mutate(concern_privacy = ordered(
+    x = str_to_lower(concern_privacy),
+    level = rating_infos$concern$rating_chr[4:3]
+  )) %>%
+  arrange(country_code, political_str, desc(concern_privacy)) %>%
+  mutate(cumperc = cumsum(perc),
+         text_y = (cumperc + lag(cumperc, default = 0)) / 2)
+
+# find numbers for left side
+dat_concern_political_aggr_left <- dat_concern_political_aggr %>%
+  filter(side == "left") %>%
+  arrange(country_code, political_str, desc(concern_privacy)) %>%
+  mutate(cumperc = cumsum(perc),
+         text_y = -(cumperc + lag(cumperc, default = 0)) / 2)
+
+# find side totals
+dat_concern_political_aggr_sides <-
+  bind_rows(dat_concern_political_aggr_left,
+            dat_concern_political_aggr_right) %>%
+  group_by(country_code, political_str, side) %>%
+  summarize(perc = sum(perc)) %>%
+  mutate(sum_x = ifelse(side == "left", -(perc + 12.5), perc + 12.5))
+
+dat_concern_political <- list(
+  aggr = dat_concern_political_aggr,
+  left = dat_concern_political_aggr_left,
+  right = dat_concern_political_aggr_right,
+  sides = dat_concern_political_aggr_sides
+)
+
+```
+
+
+```{r fig_concern_political}
+fig_concern_political <- ggplot() +
+  scale_x_discrete("") +
+  scale_y_continuous("",
+                     guide = NULL,
+                     limits = c(NA, +120)) +
+  geom_bar(
+    data = dat_concern_political$right,
+    aes(
+      x = political_str,
+      y = perc,
+      fill = concern_privacy,
+      width = sqrt(n_political) / 20
+    ),
+    width = .8,
+    position = "stack",
+    stat = "identity"
+  ) +
+  geom_text(
+    data = dat_concern_political$right,
+    aes(x = political_str, y = text_y, label = perc),
+    size = fontsize,
+    color = "white",
+    fontface = "bold"
+  ) +
+  geom_bar(
+    data = dat_concern_political$left,
+    aes(
+      x = political_str,
+      y = -perc,
+      fill = concern_privacy,
+      width = sqrt(n_political) / 20
+    ),
+    width = .8,
+    position = "stack",
+    stat = "identity"
+  ) +
+  geom_text(
+    data = dat_concern_political$left,
+    aes(x = political_str, y = text_y, label = perc),
+    size = fontsize,
+    color = "white",
+    fontface = "bold"
+  ) +
+  geom_text(
+    data = dat_concern_political$sides,
+    aes(x = political_str, y = sum_x, label = perc),
+    size = 1.25 * fontsize,
+    fontface = "bold"
+  ) +
+  geom_text(
+    y = 117.5,
+    size = 1.75,
+    angle = 90,
+    color = "darkgrey",
+    aes(
+      x = political_str,
+      label = round(n_political, 0),
+      y = NULL,
+      weight = NULL
+    ),
+    data = dat_political_n
+  ) +
+  geom_hline(yintercept = 0) +
+  facet_grid(country_code ~ .) +
+  scale_fill_manual(name = "",
+                    values = rating_infos$concern_colors) +
+  guides(fill = guide_legend(reverse = FALSE,
+                             ncol = 2)) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.major = element_blank(),
+    axis.text.x = element_text(
+      angle = 60,
+      hjust = 1,
+      size = 6
+    )
+  ) +
+  ggtitle("Data privacy concerns")
+
+fig_concern_political_legend <- get_legend(
+  fig_concern_political +
+    theme(
+      legend.box.margin = margin(10, 10, 10, 10),
+      legend.title = element_blank(),
+      legend.text = element_text(size = 7)
+    )
+)
+
+fig_concern_political <- plot_grid(
+  fig_concern_political + theme(legend.position = "none"),
+  fig_concern_political_legend,
+  ncol = 1,
+  rel_heights = c(10, 1)
+)
+
+```
+
+
+```{r fig_political, fig.width=7, fig.height=5}
+fig_political <- plot_grid(
+  fig_political_attitudes +
+    ggtitle("Attitudes towards personalization"),
+  fig_concern_political,
+  rel_widths = c(1, .7),
+  nrow = 1
+)
+fig_political
+
+save_plot(
+  here("output/fig_political.pdf"),
+  fig_political,
+  base_width = 18 / 2.54,
+  # 18/2.54 max
+  base_height = 5 # 22/2.54 max
+)
+
+```
+
+
+
+# Supplemental information (SI)
+
+## `fig:misc`
+
+```{r fnc_dat_yes_no}
+fnc_dat_yes_no <- function(topic_str) {
+  dat_tmp <- items %>%
+    filter(topic == topic_str) %>%
+    pull(item) %>%
+    select(dat, id, country_code, weight, ends_with("_split"), .) %>%
+    pivot_longer(
+      cols = c(-id, -country_code, -weight, -ends_with("_split")),
+      names_to = "item",
+      values_to = "rating"
+    ) %>%
+    left_join(items, by = "item") %>%
+    mutate(rating_chr = factor(
+      x = rating,
+      level = rev(rating_infos$yes_no$rating),
+      labels = rev(rating_infos$yes_no$rating_chr)
+    ))
+  
+  # item order is defined by pooling across countries
+  item_order <- dat_tmp %>%
+    group_by(concept) %>%
+    summarize(order_by = weighted.mean(rating, weight)) %>%
+    arrange(order_by) %>%
+    # not descending because it will be plotted in reverse
+    pull(concept)
+  
+  dat_tmp <- dat_tmp %>%
+    mutate(item_ord = factor(x = concept, level = item_order)) %>%
+    group_by(country_code, topic, item, item_ord, rating) %>%
+    summarize(n = sum(weight)) %>%
+    group_by(country_code, topic, item) %>%
+    mutate(prop = n / sum(n),
+           perc = fnc_perc(prop)) %>%
+    filter(rating == TRUE)
+  
+  return(dat_tmp)
+}
+
+```
+
+
+
+```{r fig_terminology}
+fig_terminology_base <- fnc_dat_yes_no("terms_familiarity") %>%
+  ggplot(aes(item_ord, 100 * prop, group = country_code)) +
+  scale_x_discrete(
+    "",
+    label = function(x)
+      str_wrap(x, width = 40)
+  ) +
+  scale_y_continuous("% affirmative responses", guide = "none") +
+  coord_flip(ylim = c(0, 100)) +
+  geom_line(alpha = .5) +
+  geom_point() +
+  geom_text(aes(y = 100 * prop + 10, label = perc), size = 2.5) +
+  facet_grid(. ~ country_code) +
+  theme(
+    axis.text.y = element_text(size = 7),
+    axis.title.x = element_blank(),
+    panel.grid.major.x = element_blank()
+  )
+
+fig_terminology <- fig_terminology_base +
+  ggtitle(
+    "\"Which of the following terms are you familiar with\n(that is, you know more or less what they mean)?\""
+  )
+
+```
+
+
+```{r fig_used_applications}
+fig_used_applications <- fig_terminology_base %+%
+  fnc_dat_yes_no("used_applications") +
+  ggtitle("\"Which of the following applications have you used within the past year?\"")
+
+```
+
+
+```{r fig_awareness}
+fig_awareness <- fig_terminology_base %+%
+  fnc_dat_yes_no("ai_is_used") +
+  ggtitle("\"In which of the following situations do you think AI technologies are commonly used?\"")
+
+```
+
+
+```{r fig_feed}
+fig_feed <- fig_terminology_base %+%
+  fnc_dat_yes_no("criteria_social_media") +
+  ggtitle("\"What do you think are the main criteria used to customize which posts you see?\"")
+
+```
+
+
+```{r fig_misc, fig.width=7, fig.height=8.6}
+fig_misc <- plot_grid(
+  fig_terminology,
+  fig_used_applications,
+  fig_awareness,
+  fig_feed,
+  ncol = 1,
+  rel_heights = c(1, 1, 1.4, 1.4),
+  align = "hv"
+)
+fig_misc
+
+save_plot(
+  here("output/fig_misc.pdf"),
+  fig_misc,
+  base_width = 18 / 2.54,
+  # 18/2.54 max
+  base_height = 22 / 2.54
+  # 22/2.54 max
+)
+
+```
+
+
+
+
+## `fig:age_gender`
+
+```{r dat_fig_attitudes_age_gender}
+dat_fig_attitudes_age_gender <-
+  fnc_dat_attitudes("^acceptability")$dat %>%
+  group_by(country_code,
+           id,
+           weight,
+           age,
+           gender,
+           topic_str) %>%
+  summarize(m = mean(x = (as.numeric(rating) - 1) / (4 - 1)))
+# no weighting here since this is averaging within respondents
+
+```
+
+
+
+```{r fig_attitudes_age_gender}
+fig_attitudes_age_gender <- dat_fig_attitudes_age_gender %>%
+  ggplot(aes(
+    age,
+    m,
+    color = fct_rev(gender),
+    fill = fct_rev(gender),
+    weight = weight
+  )) +
+  coord_fixed(ratio = 50) +
+  scale_x_continuous("Age") +
+  scale_y_continuous("Acceptance level") +
+  scale_color_discrete("Gender", guide = guide_legend(reverse = TRUE)) +
+  scale_fill_discrete("Gender", guide = guide_legend(reverse = TRUE)) +
+  geom_point(alpha = .1, size = .75) +
+  geom_smooth(alpha = .5, size = .5) +
+  facet_grid(country_code ~ fct_rev(topic_str)) +
+  theme(axis.text = element_text(size = 8))
+
+```
+
+
+
+
+```{r dat_concern_age_gender}
+dat_concern_age_gender <- dat_concern %>%
+  mutate(age_group = cut(age,
+                         quantile(dat$age, probs = seq(0, 1, length.out = 5)),
+                         include.lowest = TRUE))
+
+
+dat_concern_age_gender_n <- dat_concern_age_gender %>%
+  group_by(country_code,
+           gender,
+           age_group) %>%
+  summarize(n_age_gender = sum(weight)) %>%
+  ungroup %>%
+  select(country_code, gender, age_group, n_age_gender)
+
+
+dat_concern_age_gender_aggr <- dat_concern_age_gender %>%
+  group_by(country_code,
+           age_group,
+           gender,
+           concern_privacy) %>%
+  summarize(n = sum(weight)) %>%
+  group_by(country_code, gender, age_group) %>%
+  mutate(prop = n / sum(n), perc = fnc_perc(prop)) %>%
+  left_join(dat_concern_age_gender_n,
+            by = c("country_code", "gender", "age_group")) %>%
+  left_join(
+    select(rating_infos$concern, rating_chr, color_hex),
+    by = c("concern_privacy" = "rating_chr")
+  ) %>%
+  mutate(side = ifelse(str_detect(concern_privacy, "not"), "left", "right"))
+
+# find numbers for right side
+dat_concern_age_gender_aggr_right <- dat_concern_age_gender_aggr %>%
+  filter(side == "right") %>%
+  mutate(concern_privacy = ordered(
+    x = str_to_lower(concern_privacy),
+    level = rating_infos$concern$rating_chr[4:3]
+  )) %>%
+  arrange(country_code, gender, age_group, desc(concern_privacy)) %>%
+  mutate(cumperc = cumsum(perc),
+         text_y = (cumperc + lag(cumperc, default = 0)) / 2)
+
+# find numbers for left side
+dat_concern_age_gender_aggr_left <- dat_concern_age_gender_aggr %>%
+  filter(side == "left") %>%
+  arrange(country_code, gender, age_group, desc(concern_privacy)) %>%
+  mutate(cumperc = cumsum(perc),
+         text_y = -(cumperc + lag(cumperc, default = 0)) / 2)
+
+# find side totals
+dat_concern_age_gender_aggr_sides <-
+  bind_rows(dat_concern_age_gender_aggr_left,
+            dat_concern_age_gender_aggr_right) %>%
+  group_by(country_code, gender, age_group, side) %>%
+  summarize(perc = sum(perc)) %>%
+  mutate(sum_x = ifelse(side == "left", -(perc + 12.5), perc + 12.5))
+
+dat_concern_age_gender <- list(
+  aggr = dat_concern_age_gender_aggr,
+  left = dat_concern_age_gender_aggr_left,
+  right = dat_concern_age_gender_aggr_right,
+  sides = dat_concern_age_gender_aggr_sides
+)
+
+```
+
+
+
+
+```{r fig_concern_age_gender}
+fig_concern_age_gender <- ggplot() +
+  scale_x_discrete("Age groups") +
+  scale_y_continuous("",
+                     guide = NULL,
+                     limits = c(NA, +125)) +
+  geom_bar(
+    data = dat_concern_age_gender$right,
+    aes(
+      x = age_group,
+      y = perc,
+      fill = concern_privacy,
+      width = sqrt(n_age_gender) / 20
+    ),
+    width = .8,
+    position = "stack",
+    stat = "identity"
+  ) +
+  geom_text(
+    data = dat_concern_age_gender$right,
+    aes(x = age_group, y = text_y, label = perc),
+    size = fontsize,
+    color = "white",
+    fontface = "bold"
+  ) +
+  geom_bar(
+    data = dat_concern_age_gender$left,
+    aes(
+      x = age_group,
+      y = -perc,
+      fill = concern_privacy,
+      width = sqrt(n_age_gender) / 20
+    ),
+    width = .8,
+    position = "stack",
+    stat = "identity"
+  ) +
+  geom_text(
+    data = dat_concern_age_gender$left,
+    aes(x = age_group, y = text_y, label = perc),
+    size = fontsize,
+    color = "white",
+    fontface = "bold"
+  ) +
+  geom_text(
+    data = dat_concern_age_gender$sides,
+    aes(x = age_group, y = sum_x, label = perc),
+    size = 1.25 * fontsize,
+    fontface = "bold"
+  ) +
+  geom_text(
+    y = 122.5,
+    size = 1.75,
+    angle = 90,
+    color = "darkgrey",
+    aes(
+      x = age_group,
+      label = round(n_age_gender, 0),
+      y = NULL,
+      weight = NULL
+    ),
+    data = dat_concern_age_gender_n
+  ) +
+  geom_hline(yintercept = 0) +
+  facet_grid(country_code ~ gender) +
+  scale_fill_manual(name = "",
+                    values = rating_infos$concern_colors) +
+  guides(fill = guide_legend(reverse = FALSE,
+                             nrow = 2)) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.major = element_blank(),
+    axis.text.x = element_text(
+      angle = 60,
+      hjust = 1,
+      size = 6
+    )
+  ) +
+  ggtitle("Data privacy concerns")
+
+fig_concern_age_gender_legend <- get_legend(
+  fig_concern_age_gender +
+    theme(
+      legend.box.margin = margin(10, 10, 10, 10),
+      legend.title = element_blank(),
+      legend.text = element_text(size = 7)
+    )
+)
+
+fig_concern_age_gender <- plot_grid(
+  fig_concern_age_gender + theme(legend.position = "none"),
+  fig_concern_age_gender_legend,
+  ncol = 1,
+  rel_heights = c(10, 1)
+)
+
+```
+
+
+```{r fig_age_gender, fig.width=7, fig.height=5}
+fig_age_gender <- plot_grid(
+  fig_attitudes_age_gender +
+    ggtitle("Attitudes towards personalization"),
+  fig_concern_age_gender,
+  rel_widths = c(1, .7),
+  nrow = 1
+)
+fig_age_gender
+
+save_plot(
+  here("output/fig_age_gender.pdf"),
+  fig_age_gender,
+  base_width = 18 / 2.54,
+  # 18/2.54 max
+  base_height = 5
+  # 22/2.54 max
+)
+
+```
+
+
+
+## `fig:education_city_rural`
+
+```{r dat_fig_attitudes_education_city_rural}
+dat_fig_attitudes_education_city_rural <-
+  fnc_dat_attitudes("^acceptability")$dat %>%
+  group_by(country_code,
+           id,
+           weight,
+           education_split,
+           city_rural_split,
+           topic_str) %>%
+  summarize(m = mean(x = (as.numeric(rating) - 1) / (4 - 1)))
+# no weighting here since this is averaging within respondents
+
+
+dat_fig_attitudes_education_city_rural_n <-
+  dat_fig_attitudes_education_city_rural %>%
+  group_by(country_code,
+           education_split,
+           city_rural_split,
+           topic_str) %>%
+  summarize(n = sum(weight)) %>%
+  mutate(n_str = round(n, 0))
+
+
+```
+
+
+```{r fig_attitudes_education_city_rural}
+fig_attitudes_education_city_rural <-
+  dat_fig_attitudes_education_city_rural %>%
+  ggplot(aes(city_rural_split, m, fill = education_split, weight = weight)) +
+  scale_x_discrete("Urban/rural") +
+  scale_y_continuous("Acceptance level", limits = c(-.1, +1)) +
+  scale_fill_brewer("Education", type = "qual") +
+  geom_boxplot(
+    varwidth = TRUE,
+    position = position_dodge2(padding = .1, preserve = "single"),
+    outlier.alpha = 0.5,
+    outlier.size = .5,
+    alpha = .5
+  ) +
+  facet_grid(country_code ~ fct_rev(topic_str)) +
+  theme(axis.text = element_text(size = 9))
+
+```
+
+
+
+
+
+
+```{r dat_concern_education_city_rural}
+dat_concern_education_city_rural_n <- dat_concern %>%
+  group_by(country_code,
+           education_split,
+           city_rural_split) %>%
+  summarize(n_education_city_rural = sum(weight)) %>%
+  ungroup
+
+
+dat_concern_education_city_rural_aggr <- dat_concern %>%
+  group_by(country_code,
+           education_split,
+           city_rural_split,
+           concern_privacy) %>%
+  summarize(n = sum(weight)) %>%
+  group_by(country_code, education_split, city_rural_split) %>%
+  mutate(prop = n / sum(n),
+         perc = fnc_perc(prop)) %>%
+  left_join(
+    dat_concern_education_city_rural_n,
+    by = c("country_code", "education_split", "city_rural_split")
+  ) %>%
+  left_join(
+    select(rating_infos$concern, rating_chr, color_hex),
+    by = c("concern_privacy" = "rating_chr")
+  ) %>%
+  mutate(side = ifelse(str_detect(concern_privacy, "not"), "left", "right"))
+
+# find numbers for right side
+dat_concern_education_city_rural_right <-
+  dat_concern_education_city_rural_aggr %>%
+  filter(side == "right") %>%
+  mutate(concern_privacy = ordered(
+    x = str_to_lower(concern_privacy),
+    level = rating_infos$concern$rating_chr[4:3]
+  )) %>%
+  arrange(country_code,
+          education_split,
+          city_rural_split,
+          desc(concern_privacy)) %>%
+  mutate(cumperc = cumsum(perc),
+         text_y = (cumperc + lag(cumperc, default = 0)) / 2)
+
+# find numbers for left side
+dat_concern_education_city_rural_left <-
+  dat_concern_education_city_rural_aggr %>%
+  filter(side == "left") %>%
+  arrange(country_code,
+          education_split,
+          city_rural_split,
+          desc(concern_privacy)) %>%
+  mutate(cumperc = cumsum(perc),
+         text_y = -(cumperc + lag(cumperc, default = 0)) / 2)
+
+# find side totals
+dat_concern_education_city_rural_sides <-
+  bind_rows(dat_concern_education_city_rural_left,
+            dat_concern_education_city_rural_right) %>%
+  group_by(country_code, education_split, city_rural_split, side) %>%
+  summarize(perc = sum(perc)) %>%
+  mutate(sum_x = ifelse(side == "left", -(perc + 12.5), perc + 12.5))
+
+dat_concern_education_city_rural <- list(
+  aggr = dat_concern_education_city_rural_aggr,
+  left = dat_concern_education_city_rural_left,
+  right = dat_concern_education_city_rural_right,
+  sides = dat_concern_education_city_rural_sides
+)
+
+```
+
+
+
+
+```{r fig_concern_education_city_rural}
+fig_concern_education_city_rural <- ggplot() +
+  scale_x_discrete("Education level") +
+  scale_y_continuous("",
+                     guide = NULL,
+                     limits = c(NA, +125)) +
+  geom_bar(
+    data = dat_concern_education_city_rural$right,
+    aes(
+      x = education_split,
+      y = perc,
+      fill = concern_privacy,
+      width = sqrt(n_education_city_rural) / 20
+    ),
+    width = .8,
+    position = "stack",
+    stat = "identity"
+  ) +
+  geom_text(
+    data = dat_concern_education_city_rural$right,
+    aes(x = education_split, y = text_y, label = perc),
+    size = fontsize,
+    color = "white",
+    fontface = "bold"
+  ) +
+  geom_bar(
+    data = dat_concern_education_city_rural$left,
+    aes(
+      x = education_split,
+      y = -perc,
+      fill = concern_privacy,
+      width = sqrt(n_education_city_rural) / 20
+    ),
+    width = .8,
+    position = "stack",
+    stat = "identity"
+  ) +
+  geom_text(
+    data = dat_concern_education_city_rural$left,
+    aes(x = education_split, y = text_y, label = perc),
+    size = fontsize,
+    color = "white",
+    fontface = "bold"
+  ) +
+  geom_text(
+    data = dat_concern_education_city_rural$sides,
+    aes(x = education_split, y = sum_x, label = perc),
+    size = 1.25 * fontsize,
+    fontface = "bold"
+  ) +
+  geom_text(
+    y = 122.5,
+    size = 1.75,
+    angle = 90,
+    color = "darkgrey",
+    aes(
+      x = education_split,
+      label = round(n_education_city_rural, 0),
+      y = NULL,
+      weight = NULL
+    ),
+    data = dat_concern_education_city_rural_n
+  ) +
+  geom_hline(yintercept = 0) +
+  facet_grid(country_code ~ city_rural_split) +
+  scale_fill_manual(name = "",
+                    values = rating_infos$concern_colors) +
+  guides(fill = guide_legend(reverse = FALSE,
+                             nrow = 2)) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.major = element_blank(),
+    axis.text.x = element_text(
+      angle = 60,
+      hjust = 1,
+      size = 6
+    )
+  ) +
+  ggtitle("Data privacy concerns")
+
+fig_concern_education_city_rural_legend <- get_legend(
+  fig_concern_education_city_rural +
+    theme(
+      legend.box.margin = margin(10, 10, 10, 10),
+      legend.title = element_blank(),
+      legend.text = element_text(size = 7)
+    )
+)
+
+fig_concern_education_city_rural <- plot_grid(
+  fig_concern_education_city_rural + theme(legend.position = "none"),
+  fig_concern_education_city_rural_legend,
+  ncol = 1,
+  rel_heights = c(10, 1)
+)
+
+```
+
+
+```{r fig_education_city_rural, fig.width=7, fig.height=5}
+fig_education_city_rural <- plot_grid(
+  fig_attitudes_education_city_rural +
+    ggtitle("Attitudes towards personalization"),
+  fig_concern_education_city_rural,
+  rel_widths = c(1, .7),
+  nrow = 1
+)
+fig_education_city_rural
+
+save_plot(
+  here("output/fig_education_city_rural.pdf"),
+  fig_education_city_rural,
+  base_width = 18 / 2.54,
+  # 18/2.54 max
+  base_height = 5 # 22/2.54 max
+)
+
+```
+

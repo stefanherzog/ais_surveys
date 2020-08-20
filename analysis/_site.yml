@@ -1,0 +1,24 @@
+name: AI+Society surveys
+output_dir: ../public
+navbar:
+  title: Surveys
+  left:
+  - text: Home
+    href: index.html
+  - text: Make data
+    href: dalia_make_data.html
+  - text: Analyses
+    href: dalia_figures.html
+  right:
+  - icon: fa-gitlab
+    text: Source code
+    href: https://arc-git.mpib-berlin.mpg.de/ai_society/surveys
+output:
+  workflowr::wflow_html:
+    number_sections: yes
+    toc_depth: 3
+    toc: yes
+    toc_float: yes
+    theme: cosmo
+    highlight: textmate
+    code_folding: hide

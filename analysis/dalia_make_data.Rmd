@@ -1,0 +1,173 @@
+---
+title: "Make data"
+site: workflowr::wflow_site
+output:
+  workflowr::wflow_html:
+    code_folding: hide
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+editor_options:
+  chunk_output_type: console
+---
+
+# Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = TRUE,
+  cache = FALSE,
+  autodep = TRUE
+)
+
+```
+
+Source `dependencies.R`.
+
+```{r dependencies, message=FALSE, code=readr::read_lines(here::here("code/_dependencies.R"))}
+source(here::here("code/_dependencies.R"))
+
+```
+
+
+# Load data
+
+```{r load_data}
+# load Germany survey data
+DE <-
+  "data/data_GER.csv" %>% 
+  read_csv %>% 
+  type_convert
+
+# load US/GB survey data
+US_GB <- "data/data_GB_US.csv" %>% 
+  read_csv() %>% 
+  type_convert
+
+# load item information
+items <- read_csv2(here("data/dalia_vars.csv")) %>%
+  type_convert %>%
+  mutate(
+    topic = factor(topic),
+    concept = map2_chr(concept,
+                        concept_summary,
+                        function(x, y)
+                          ifelse(is.na(y), x, y))
+  )
+
+# use simple, standardized variable names
+names(DE) <- pull(items, item)
+names(US_GB) <- pull(items, item)
+  
+# row-bind the two survey data frames
+dat <- bind_rows(DE, US_GB)
+
+expect_equal(nrow(items), ncol(dat))
+
+# glimpse(dat)
+
+```
+
+
+
+# Augment data
+
+```{r augment_data}
+dat <- dat %>%
+  mutate(
+    age = as.integer(age),
+    country_code = fct_recode(
+      country_code,
+      "GER" = "DE",
+      "GB" = "GB",
+      "US" = "US"
+    ),
+    city_rural_split = fct_recode(
+      city_or_rural,
+      "urban" = "city",
+      "rural" = "rural"
+      ),
+    education = ordered(education,
+                        levels = c("no", "low", "medium", "high")),
+    political = str_sub(political, 1, 1),
+    political_num = (as.numeric(political) - 1) / (7 - 1),
+    political = fct_recode(
+      political,
+      "-3" = "1",
+      "-2" = "2",
+      "-1" = "3",
+       "0" = "4",
+      "+1" = "5",
+      "+2" = "6",
+      "+3" = "7"
+    ),
+    political_split = fct_collapse(
+      as.character(political),
+      left = c("-3", "-2", "-1"),
+      center = "0",
+      right = c("+1", "+2", "+3")
+    ) %>% ordered(levels = c("left", "center", "right")),
+    political_str = fct_recode(
+      political,
+      "far left" = "-3",
+      "left" = "-2",
+      "somewhat left" = "-1",
+      "center" = "0",
+      "somewhat right" = "+1",
+      "right" = "+2",
+      "far right" = "+3"
+    ),
+    education_split = fct_collapse(
+      education,
+      low = c("no", "low"),
+      medium = "medium",
+      high = "high"
+    ),
+    education_split = ordered(education_split)
+  ) %>%
+  select(-city_or_rural) %>%
+  type_convert %>%
+  rename(id = UUID)
+
+# glimpse(dat)
+
+```
+
+
+
+# Adjust data
+
+```{r adjust}
+# We only consider the answers to settings-adjustment questions if the respondent indicated that they used the corresponding service; if they did not, we replace the corresponding privacy-behavior response with `NA`.
+
+# items %>%
+#   filter(topic %in% c("used_applications", "adjustment_online_data")) %>%
+#   select(topic, item, concept)
+
+dat <- dat %>%
+  mutate(Google_controls = ifelse(
+    Google == TRUE, Google_controls, NA)) %>% 
+  mutate(Google_privacy = ifelse(
+    Google == TRUE, Google_privacy, NA)) %>% 
+  mutate(Facebook_privacy = ifelse(
+    Facebook == TRUE, Facebook_privacy, NA)) %>% 
+  mutate(Facebook_ad_preferences = ifelse(
+    Facebook == TRUE, Facebook_ad_preferences, NA)) %>% 
+  mutate(Amazon_privacy = ifelse(
+    Amazon == TRUE, Amazon_privacy, NA))
+
+```
+
+
+
+
+# Write to disk
+
+```{r write_to_disk}
+write_rds(dat, here("output/dat.rds"))
+write_rds(items, here("output/items.rds"))
+
+```
+

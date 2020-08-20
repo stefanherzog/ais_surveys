@@ -1,0 +1,13 @@
+---
+title: "Public attitudes towards algorithmic personalization and use of personal data online: Evidence from Germany, Great Britain, and the US"
+site: workflowr::wflow_site
+output:
+  workflowr::wflow_html:
+    toc: false
+editor_options:
+  chunk_output_type: console
+---
+
+Data and code for manuscript "Public attitudes towards algorithmic personalization and use of personal data online: Evidence from Germany, Great Britain, and the US".
+
+All data & code to reproduce the analyses reported in this paper are available on: https://osf.io/7nj8h/
