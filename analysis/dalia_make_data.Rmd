@@ -106,15 +106,15 @@ dat <- dat %>%
     political_split = fct_collapse(
       as.character(political),
       left = c("-3", "-2", "-1"),
-      center = "0",
+      centre = "0",
       right = c("+1", "+2", "+3")
-    ) %>% ordered(levels = c("left", "center", "right")),
+    ) %>% ordered(levels = c("left", "centre", "right")),
     political_str = fct_recode(
       political,
       "far left" = "-3",
       "left" = "-2",
       "somewhat left" = "-1",
-      "center" = "0",
+      "centre" = "0",
       "somewhat right" = "+1",
       "right" = "+2",
       "far right" = "+3"

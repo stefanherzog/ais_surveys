@@ -293,7 +293,7 @@ fnc_dat_attitudes <- function(topic_str) {
 
 ```{r fig_attitudes, fig.width=7, fig.height=7.5}
 fnc_fig_attitudes <- function(topic_str, fig_attitudes_str) {
-  fontsize <- 1.75
+  fontsize <- 1.8
   
   dat_fig_attitudes <-
     fnc_dat_attitudes(topic_str)
@@ -303,7 +303,7 @@ fnc_fig_attitudes <- function(topic_str, fig_attitudes_str) {
       "",
       label = function(x) {
         x <- str_replace(x, "\n", " ")
-        str_wrap(x, width = 35)
+        str_wrap(x, width = 40)
       }
     ) +
     scale_y_continuous("",
@@ -366,15 +366,15 @@ fnc_fig_attitudes <- function(topic_str, fig_attitudes_str) {
 }
 
 fig_attitudes_services <- fnc_fig_attitudes("acceptability_service",
-                                            "Acceptability of personalizing a service")
+                                            "a. Acceptability of personalizing a service")
 
 fig_attitudes_information <- fnc_fig_attitudes(
   "acceptability_information",
-  "Acceptability of using information for personalization"
+  "b. Acceptability of using information for personalization"
 )
 
 fig_attitudes_data <- fnc_fig_attitudes("acceptability_data",
-                                        "Acceptability of collecting and using data")
+                                        "c. Acceptability of collecting and using data")
 
 fig_attitudes <- plot_grid(
   fig_attitudes_services + guides(fill = "none"),
@@ -383,7 +383,7 @@ fig_attitudes <- plot_grid(
   ncol = 1,
   align = "hv",
   
-  rel_heights = c(1.125, 1.125, 1)
+  rel_heights = c(1.5, 1.5, 1.5)
 )
 
 fig_attitudes_legend <- get_legend(
@@ -391,7 +391,7 @@ fig_attitudes_legend <- get_legend(
     theme(
       legend.box.margin = margin(10, 10, 10, 10),
       legend.title = element_blank(),
-      legend.text = element_text(size = 7)
+      legend.text = element_text(size = 8)
     )
 )
 
@@ -406,11 +406,11 @@ fig_attitudes
 save_plot(
   here("output/fig_attitudes.pdf"),
   fig_attitudes,
-  base_width = 18 / 2.54,
-  # 18/2.54 max
-  base_height = 7.5,
-  # 22/2.54 max
-)
+  dpi=300,
+  base_width = 7.086,
+  base_height = 8
+ )
+
 
 ```
 
@@ -582,7 +582,7 @@ fig_gap <- plot_grid(
   fig_gap_individual,
   axis = "b",
   align = "hv",
-  labels = c("A", "B"),
+  labels = c("a", "b"),
   hjust = -2,
   vjust = +1.5,
   label_size = 18,
@@ -594,11 +594,10 @@ fig_gap
 save_plot(
   here("output/fig_gap.pdf"),
   fig_gap,
-  base_width = 18 / 2.54,
-  # 18/2.54 max
-  base_height = 6.5,
-  # 22/2.54 max
-)
+  dpi=300,
+  base_width = 7.086,
+  base_height = 6
+  )
 
 ```
 
@@ -680,7 +679,7 @@ dat_concern_dfs <- list(
 
 
 ```{r fig_concern}
-fontsize <- 1.75
+fontsize <- 2.3
 
 fig_concern <- ggplot() +
   scale_x_discrete("") +
@@ -742,10 +741,10 @@ fig_concern <-
   plot_grid(
     fig_concern +
       guides(fill = "none") +
-      theme(plot.margin = margin(15, 0, 0, 75)),
+      theme(plot.margin = margin(10, 0, 0, 75)),
     fig_concern_legend,
-    labels = c("Privacy concerns"),
-    hjust = -.25,
+    labels = c("a. Privacy concerns"),
+    hjust = -.05,
     ncol = 2,
     scale = c(1, .8),
     rel_heights = c(10, 1)
@@ -938,8 +937,8 @@ fig_privacy_tools_settings <- plot_grid(
   fig_privacy_settings +
     theme(legend.position = "none"),
   ncol = 1,
-  labels = c(" Privacy tools", "Privacy settings"),
-  hjust = -.25,
+  labels = c("b. Privacy tools", "c. Privacy settings"),
+  hjust = -.1,
   axis = "b",
   align = "hv"
 )
@@ -952,20 +951,19 @@ fig_privacy <- plot_grid(
   fig_concern,
   fig_privacy_tools_settings,
   fig_privacy_tools_settings_legend,
-  rel_heights = c(1.25, 4, .5),
+  rel_heights = c(1, 3, .6),
   ncol = 1
 )
 fig_privacy
 
-# https://www.pnas.org/page/authors/format
+
 save_plot(
   here("output/fig_privacy.pdf"),
   fig_privacy,
-  base_width = 18 / 2.54,
-  # 18/2.54 max
-  base_height = 7
-  # 22/2.54 max
-)
+  dpi=300,
+  base_width = 7.086,
+  base_height = 8.5
+  )
 
 ```
 
@@ -1013,7 +1011,7 @@ fig_political_attitudes <- dat_fig_political_attitudes %>%
   )) +
   scale_x_discrete("") +
   scale_y_continuous("Average acceptability", limits = c(-.175, +1)) +
-  scale_fill_manual(values = c("red", "white", "darkgrey")) +
+  scale_fill_manual(values = c("#327eeb", "white", "#d00000")) +
   geom_hline(yintercept = 0.5,
              linetype = "dashed") +
   # `geom_boxplot` understands the weight mapping
@@ -1026,9 +1024,9 @@ fig_political_attitudes <- dat_fig_political_attitudes %>%
   ) +
   geom_text(
     y = -0.125,
-    size = 1.75,
+    size = 2.3,
     angle = 90,
-    color = "darkgrey",
+    color = "#383a46",
     aes(label = n_str, y = NULL, weight = NULL),
     data = dat_fig_political_attitudes_n
   ) +
@@ -1037,7 +1035,7 @@ fig_political_attitudes <- dat_fig_political_attitudes %>%
     axis.text.x = element_text(
       angle = 60,
       hjust = 1,
-      size = 6
+      size = 8
     ),
     panel.grid.major.x = element_blank()
   ) +
@@ -1057,6 +1055,7 @@ dat_political_n <- dat_concern %>%
   summarize(n_political = sum(weight)) %>%
   ungroup %>%
   select(country_code, political_str, n_political)
+
 
 dat_concern_political_aggr <- dat_concern %>%
   group_by(
@@ -1135,7 +1134,7 @@ fig_concern_political <- ggplot() +
   geom_text(
     data = dat_concern_political$right,
     aes(x = political_str, y = text_y, label = perc),
-    size = fontsize,
+    size = 1.8,
     color = "white",
     fontface = "bold"
   ) +
@@ -1154,21 +1153,21 @@ fig_concern_political <- ggplot() +
   geom_text(
     data = dat_concern_political$left,
     aes(x = political_str, y = text_y, label = perc),
-    size = fontsize,
+    size = 1.8,
     color = "white",
     fontface = "bold"
   ) +
   geom_text(
     data = dat_concern_political$sides,
     aes(x = political_str, y = sum_x, label = perc),
-    size = 1.25 * fontsize,
+    size = 1.25 * 1.8,
     fontface = "bold"
   ) +
   geom_text(
     y = 117.5,
-    size = 1.75,
+    size = 2.3,
     angle = 90,
-    color = "darkgrey",
+    color = "#383a46",
     aes(
       x = political_str,
       label = round(n_political, 0),
@@ -1189,10 +1188,10 @@ fig_concern_political <- ggplot() +
     axis.text.x = element_text(
       angle = 60,
       hjust = 1,
-      size = 6
+      size = 8
     )
   ) +
-  ggtitle("Data privacy concerns")
+  ggtitle("b. Data privacy concerns")
 
 fig_concern_political_legend <- get_legend(
   fig_concern_political +
@@ -1207,8 +1206,10 @@ fig_concern_political <- plot_grid(
   fig_concern_political + theme(legend.position = "none"),
   fig_concern_political_legend,
   ncol = 1,
-  rel_heights = c(10, 1)
+  rel_heights = c(10, 0.8)
 )
+
+
 
 ```
 
@@ -1216,9 +1217,9 @@ fig_concern_political <- plot_grid(
 ```{r fig_political, fig.width=7, fig.height=5}
 fig_political <- plot_grid(
   fig_political_attitudes +
-    ggtitle("Attitudes towards personalization"),
+    ggtitle("a. Attitudes towards personalization"),
   fig_concern_political,
-  rel_widths = c(1, .7),
+  rel_widths = c(1.5, 1),
   nrow = 1
 )
 fig_political
@@ -1226,10 +1227,11 @@ fig_political
 save_plot(
   here("output/fig_political.pdf"),
   fig_political,
-  base_width = 18 / 2.54,
-  # 18/2.54 max
-  base_height = 5 # 22/2.54 max
+  dpi=300,
+  base_width = 7.086,
+  base_height = 6.5
 )
+
 
 ```
 
@@ -1303,7 +1305,7 @@ fig_terminology_base <- fnc_dat_yes_no("terms_familiarity") %>%
 
 fig_terminology <- fig_terminology_base +
   ggtitle(
-    "\"Which of the following terms are you familiar with\n(that is, you know more or less what they mean)?\""
+    "\"a. Which of the following terms are you familiar with\n(that is, you know more or less what they mean)?\""
   )
 
 ```
@@ -1312,7 +1314,7 @@ fig_terminology <- fig_terminology_base +
 ```{r fig_used_applications}
 fig_used_applications <- fig_terminology_base %+%
   fnc_dat_yes_no("used_applications") +
-  ggtitle("\"Which of the following applications have you used within the past year?\"")
+  ggtitle("\"b. Which of the following applications have you used within the past year?\"")
 
 ```
 
@@ -1320,7 +1322,7 @@ fig_used_applications <- fig_terminology_base %+%
 ```{r fig_awareness}
 fig_awareness <- fig_terminology_base %+%
   fnc_dat_yes_no("ai_is_used") +
-  ggtitle("\"In which of the following situations do you think AI technologies are commonly used?\"")
+  ggtitle("\"c. In which of the following situations do you think AI technologies are commonly used?\"")
 
 ```
 
@@ -1328,7 +1330,7 @@ fig_awareness <- fig_terminology_base %+%
 ```{r fig_feed}
 fig_feed <- fig_terminology_base %+%
   fnc_dat_yes_no("criteria_social_media") +
-  ggtitle("\"What do you think are the main criteria used to customize which posts you see?\"")
+  ggtitle("\"d. What do you think are the main criteria used to customize which posts you see?\"")
 
 ```
 
@@ -1348,11 +1350,10 @@ fig_misc
 save_plot(
   here("output/fig_misc.pdf"),
   fig_misc,
-  base_width = 18 / 2.54,
-  # 18/2.54 max
-  base_height = 22 / 2.54
-  # 22/2.54 max
-)
+  dpi=300,
+  base_width = 7.086,
+  base_height = 9
+ )
 
 ```
 
@@ -1492,7 +1493,7 @@ fig_concern_age_gender <- ggplot() +
   geom_text(
     data = dat_concern_age_gender$right,
     aes(x = age_group, y = text_y, label = perc),
-    size = fontsize,
+    size = 1.8,
     color = "white",
     fontface = "bold"
   ) +
@@ -1511,14 +1512,14 @@ fig_concern_age_gender <- ggplot() +
   geom_text(
     data = dat_concern_age_gender$left,
     aes(x = age_group, y = text_y, label = perc),
-    size = fontsize,
+    size = 1.8,
     color = "white",
     fontface = "bold"
   ) +
   geom_text(
     data = dat_concern_age_gender$sides,
     aes(x = age_group, y = sum_x, label = perc),
-    size = 1.25 * fontsize,
+    size = 1.25 * 1.8,
     fontface = "bold"
   ) +
   geom_text(
@@ -1549,7 +1550,7 @@ fig_concern_age_gender <- ggplot() +
       size = 6
     )
   ) +
-  ggtitle("Data privacy concerns")
+  ggtitle("b. Data privacy concerns")
 
 fig_concern_age_gender_legend <- get_legend(
   fig_concern_age_gender +
@@ -1573,7 +1574,7 @@ fig_concern_age_gender <- plot_grid(
 ```{r fig_age_gender, fig.width=7, fig.height=5}
 fig_age_gender <- plot_grid(
   fig_attitudes_age_gender +
-    ggtitle("Attitudes towards personalization"),
+    ggtitle("a. Attitudes towards personalization"),
   fig_concern_age_gender,
   rel_widths = c(1, .7),
   nrow = 1
@@ -1583,11 +1584,10 @@ fig_age_gender
 save_plot(
   here("output/fig_age_gender.pdf"),
   fig_age_gender,
-  base_width = 18 / 2.54,
-  # 18/2.54 max
-  base_height = 5
-  # 22/2.54 max
-)
+  dpi=300,
+  base_width = 7.086,
+  base_height = 6
+ )
 
 ```
 
@@ -1625,7 +1625,7 @@ dat_fig_attitudes_education_city_rural_n <-
 fig_attitudes_education_city_rural <-
   dat_fig_attitudes_education_city_rural %>%
   ggplot(aes(city_rural_split, m, fill = education_split, weight = weight)) +
-  scale_x_discrete("Urban/rural") +
+  scale_x_discrete("Location") +
   scale_y_continuous("Acceptance level", limits = c(-.1, +1)) +
   scale_fill_brewer("Education", type = "qual") +
   geom_boxplot(
@@ -1740,7 +1740,7 @@ fig_concern_education_city_rural <- ggplot() +
   geom_text(
     data = dat_concern_education_city_rural$right,
     aes(x = education_split, y = text_y, label = perc),
-    size = fontsize,
+    size = 1.8,
     color = "white",
     fontface = "bold"
   ) +
@@ -1759,7 +1759,7 @@ fig_concern_education_city_rural <- ggplot() +
   geom_text(
     data = dat_concern_education_city_rural$left,
     aes(x = education_split, y = text_y, label = perc),
-    size = fontsize,
+    size = 1.8,
     color = "white",
     fontface = "bold"
   ) +
@@ -1797,7 +1797,7 @@ fig_concern_education_city_rural <- ggplot() +
       size = 6
     )
   ) +
-  ggtitle("Data privacy concerns")
+  ggtitle("b. Data privacy concerns")
 
 fig_concern_education_city_rural_legend <- get_legend(
   fig_concern_education_city_rural +
@@ -1821,7 +1821,7 @@ fig_concern_education_city_rural <- plot_grid(
 ```{r fig_education_city_rural, fig.width=7, fig.height=5}
 fig_education_city_rural <- plot_grid(
   fig_attitudes_education_city_rural +
-    ggtitle("Attitudes towards personalization"),
+    ggtitle("a. Attitudes towards personalization"),
   fig_concern_education_city_rural,
   rel_widths = c(1, .7),
   nrow = 1
@@ -1831,10 +1831,10 @@ fig_education_city_rural
 save_plot(
   here("output/fig_education_city_rural.pdf"),
   fig_education_city_rural,
-  base_width = 18 / 2.54,
-  # 18/2.54 max
-  base_height = 5 # 22/2.54 max
-)
+  dpi=300,
+  base_width = 7.086,
+  base_height = 5.5
+ )
 
 ```
 
